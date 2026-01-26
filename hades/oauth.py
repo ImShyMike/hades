@@ -8,6 +8,8 @@ from threading import Event
 from typing import Any
 
 import httpx
+import typer
+from typer import colors
 
 
 def do_oauth_flow(port: int, apps_list: list[dict[str, Any]]):
@@ -48,20 +50,22 @@ def do_oauth_flow(port: int, apps_list: list[dict[str, Any]]):
 
     for i, app_info in enumerate(apps_list, 1):
         if app_info.get("user_token"):
-            print(
-                f"[{i}/{len(apps_list)}] {app_info['name']}: already has token, skipping"
+            typer.echo(
+                f"[{typer.style(f'{i}/{len(apps_list)}', fg=colors.CYAN)}] {app_info['name']}: {typer.style('already has token, skipping', fg=colors.YELLOW)}"
             )
             continue
 
         client_id = app_info.get("client_id")
         client_secret = app_info.get("client_secret")
         if not client_id or not client_secret:
-            print(
-                f"[{i}/{len(apps_list)}] {app_info['name']}: missing credentials, skipping"
+            typer.echo(
+                f"[{typer.style(f'{i}/{len(apps_list)}', fg=colors.CYAN)}] {app_info['name']}: {typer.style('missing credentials, skipping', fg=colors.RED)}"
             )
             continue
 
-        print(f"[{i}/{len(apps_list)}] Installing {app_info['name']}...")
+        typer.echo(
+            f"[{typer.style(f'{i}/{len(apps_list)}', fg=colors.CYAN)}] Installing {app_info['name']}..."
+        )
 
         auth_url = (
             f"https://slack.com/oauth/v2/authorize"
@@ -77,7 +81,7 @@ def do_oauth_flow(port: int, apps_list: list[dict[str, Any]]):
         server.timeout = 120
 
         webbrowser.open(auth_url)
-        print("  Opened browser for authorization...")
+        typer.echo("  Opened browser for authorization...")
 
         while not done_event.is_set():
             server.handle_request()
@@ -85,7 +89,7 @@ def do_oauth_flow(port: int, apps_list: list[dict[str, Any]]):
         server.server_close()
 
         if not captured_code:
-            print("  Failed to get authorization code")
+            typer.echo(typer.style("  Failed to get authorization code", fg=colors.RED))
             continue
 
         token_response = httpx.post(
@@ -101,14 +105,18 @@ def do_oauth_flow(port: int, apps_list: list[dict[str, Any]]):
         token_data = token_response.json()
 
         if not token_data.get("ok"):
-            print(f"  Token exchange failed: {token_data.get('error')}")
+            typer.echo(
+                typer.style(
+                    f"  Token exchange failed: {token_data.get('error')}", fg=colors.RED
+                )
+            )
             continue
 
         user_token = token_data.get("authed_user", {}).get("access_token")
         if user_token:
             app_info["user_token"] = user_token
-            print("  Got user token!")
+            typer.echo(typer.style("  Got user token!", fg=colors.GREEN))
         else:
-            print("  No user token in response")
+            typer.echo(typer.style("  No user token in response", fg=colors.RED))
 
         time.sleep(1)

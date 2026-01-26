@@ -12,6 +12,7 @@ import httpx
 import typer
 import yaml
 from slack_sdk.errors import SlackApiError
+from typer import colors
 
 from hades.db import init_db
 from hades.oauth import do_oauth_flow
@@ -67,24 +68,33 @@ def run(
 
     if apps_file:
         if not apps_file.exists():
-            print(f"Apps file not found: {apps_file}")
+            typer.echo(typer.style(f"Apps file not found: {apps_file}", fg=colors.RED))
             raise typer.Exit(1)
         with open(apps_file, encoding="utf8") as f:
             apps_list: list[dict[str, Any]] = json.load(f)
         tokens = [a["user_token"] for a in apps_list if a.get("user_token")]
         if not tokens:
-            print("No user tokens found in apps file. Run 'install-apps' first.")
+            typer.echo(
+                typer.style(
+                    "No user tokens found in apps file. Run 'install-apps' first.",
+                    fg=colors.RED,
+                )
+            )
             raise typer.Exit(1)
 
     if slack_tokens:
         tokens.extend(slack_tokens)
 
     if not tokens:
-        print("No tokens provided. Use --token or --apps.")
+        typer.echo(
+            typer.style("No tokens provided. Use --token or --apps.", fg=colors.RED)
+        )
         raise typer.Exit(1)
 
     pool = TokenPool(tokens)
-    print(f"Using {len(tokens)} token(s)")
+    typer.echo(
+        f"Using {typer.style(str(len(tokens)), fg=colors.CYAN, bold=True)} token(s)"
+    )
 
     with sqlite3.connect(path) as conn:
         init_db(conn)
@@ -96,12 +106,27 @@ def run(
 
         try:
             total = search_user_messages(pool, user_id, conn)
-            print(f"\nSaved {total} new messages to {path}")
+            typer.echo(
+                f"\nSaved {typer.style(str(total), fg=colors.GREEN, bold=True)} new messages to {path}"
+            )
         except KeyboardInterrupt:
-            print("\n\nInterrupted! Progress saved. Use --resume to continue.")
+            typer.echo(
+                typer.style(
+                    "\n\nInterrupted! Progress saved. Use --resume to continue.",
+                    fg=colors.YELLOW,
+                )
+            )
         except SlackApiError as e:
-            print(f"\n\nSlack API error: {e.response['error']}")
-            print("Progress saved. Use --resume to continue.")
+            typer.echo(
+                typer.style(
+                    f"\n\nSlack API error: {e.response['error']}", fg=colors.RED
+                )
+            )
+            typer.echo(
+                typer.style(
+                    "Progress saved. Use --resume to continue.", fg=colors.YELLOW
+                )
+            )
             raise
 
 
@@ -132,7 +157,9 @@ def create_apps(
     (under "Your App Configuration Tokens", click "Generate" and copy the "Access Token").
     """
     if not manifest_path.exists():
-        print(f"Manifest file not found: {manifest_path}")
+        typer.echo(
+            typer.style(f"Manifest file not found: {manifest_path}", fg=colors.RED)
+        )
         raise typer.Exit(1)
 
     with open(manifest_path, encoding="utf8") as f:
@@ -147,8 +174,8 @@ def create_apps(
         app_manifest.setdefault("display_information", {})
         app_manifest["display_information"]["name"] = f"{base_name} {i}"
 
-        print(
-            f"Creating app {i}/{count}: {app_manifest['display_information']['name']}"
+        typer.echo(
+            f"Creating app {typer.style(f'{i}/{count}', fg=colors.CYAN)}: {app_manifest['display_information']['name']}"
         )
 
         response = httpx.post(
@@ -161,15 +188,24 @@ def create_apps(
 
         if not data.get("ok"):
             error = data.get("error", "unknown")
-            print(f"  Error: {error}")
+            typer.echo(typer.style(f"  Error: {error}", fg=colors.RED))
             if error == "ratelimited":
                 retry_after = int(response.headers.get("Retry-After", 60))
-                print(f"  Waiting {retry_after}s before retry...")
+                typer.echo(
+                    typer.style(
+                        f"  Waiting {retry_after}s before retry...", fg=colors.YELLOW
+                    )
+                )
                 time.sleep(retry_after)
                 continue
             if "errors" in data:
                 for err in data["errors"]:
-                    print(f"    - {err.get('message')} at {err.get('pointer')}")
+                    typer.echo(
+                        typer.style(
+                            f"    - {err.get('message')} at {err.get('pointer')}",
+                            fg=colors.RED,
+                        )
+                    )
             i += 1
             continue
 
@@ -184,7 +220,7 @@ def create_apps(
             "oauth_authorize_url": data.get("oauth_authorize_url"),
         }
         apps.append(app_info)
-        print(f"  Created: {app_info['app_id']}")
+        typer.echo(f"  Created: {typer.style(app_info['app_id'], fg=colors.GREEN)}")
 
         i += 1
         time.sleep(2)
@@ -192,9 +228,11 @@ def create_apps(
     with open(output, "w", encoding="utf8") as f:
         json.dump(apps, f, indent=2)
 
-    print(f"\nCreated {len(apps)} apps. Credentials saved to {output}")
-    print("\nTo install apps and get user tokens, run:")
-    print("  python main.py install-apps")
+    typer.echo(
+        f"\nCreated {typer.style(str(len(apps)), fg=colors.GREEN, bold=True)} apps. Credentials saved to {output}"
+    )
+    typer.echo("\nTo install apps and get user tokens, run:")
+    typer.echo(typer.style("  python main.py install-apps", fg=colors.CYAN))
 
 
 @app.command()
@@ -214,14 +252,14 @@ def install_apps(
     """
 
     if not apps_file.exists():
-        print(f"Apps file not found: {apps_file}")
+        typer.echo(typer.style(f"Apps file not found: {apps_file}", fg=colors.RED))
         raise typer.Exit(1)
 
     with open(apps_file, encoding="utf8") as f:
         apps_list: list[dict[str, Any]] = json.load(f)
 
     if not apps_list:
-        print("No apps found in file.")
+        typer.echo(typer.style("No apps found in file.", fg=colors.RED))
         raise typer.Exit(1)
 
     do_oauth_flow(port, apps_list)
@@ -230,8 +268,8 @@ def install_apps(
         json.dump(apps_list, f, indent=2)
 
     tokens_count = sum(1 for a in apps_list if a.get("user_token"))
-    print(
-        f"\n{tokens_count}/{len(apps_list)} apps have user tokens. Saved to {apps_file}"
+    typer.echo(
+        f"\n{typer.style(f'{tokens_count}/{len(apps_list)}', fg=colors.GREEN, bold=True)} apps have user tokens. Saved to {apps_file}"
     )
 
 
@@ -245,7 +283,7 @@ def stats(
 ) -> None:
     """Show statistics about saved messages"""
     if not os.path.exists(path):
-        print("No database found.")
+        typer.echo(typer.style("No database found.", fg=colors.RED))
         return
 
     with sqlite3.connect(path) as conn:
@@ -256,7 +294,7 @@ def stats(
         total: int = row[0] if row else 0
 
         if total == 0:
-            print("No messages in database.")
+            typer.echo(typer.style("No messages in database.", fg=colors.YELLOW))
             return
 
         cursor.execute("SELECT MIN(ts), MAX(ts) FROM messages")
@@ -264,22 +302,28 @@ def stats(
         min_ts: str | None = ts_row[0] if ts_row else None
         max_ts: str | None = ts_row[1] if ts_row else None
 
-        print(f"Total messages: {total:,}")
+        label = typer.style("Total messages:", fg=colors.CYAN)
+        value = typer.style(f"{total:,}", fg=colors.WHITE, bold=True)
+        typer.echo(f"{label} {value}")
 
         if min_ts and max_ts:
             oldest = datetime.fromtimestamp(float(min_ts))
             newest = datetime.fromtimestamp(float(max_ts))
             days_span = (newest - oldest).days or 1
-            print(f"Date range: {oldest.date()} to {newest.date()} ({days_span} days)")
-            print(f"Average: {total / days_span:.1f} messages/day")
+            label = typer.style("Date range:", fg=colors.CYAN)
+            typer.echo(f"{label} {oldest.date()} to {newest.date()} ({days_span} days)")
+            label = typer.style("Average:", fg=colors.CYAN)
+            typer.echo(f"{label} {total / days_span:.1f} messages/day")
 
         db_size = os.path.getsize(path)
-        print(f"Database size: {db_size / 1024 / 1024:.2f} MB")
+        label = typer.style("Database size:", fg=colors.CYAN)
+        typer.echo(f"{label} {db_size / 1024 / 1024:.2f} MB")
 
         cursor.execute("SELECT COUNT(DISTINCT channel_id) FROM messages")
         channel_row = cursor.fetchone()
         unique_channels: int = channel_row[0] if channel_row else 0
-        print(f"Unique channels: {unique_channels}")
+        label = typer.style("Unique channels:", fg=colors.CYAN)
+        typer.echo(f"{label} {unique_channels}")
 
         cursor.execute("""
             SELECT CASE WHEN type = 'im' THEN 'im' ELSE channel_type END as ctype,
@@ -290,15 +334,20 @@ def stats(
         """)
         type_rows: list[tuple[str, int]] = cursor.fetchall()
         if type_rows:
-            print("\nBy channel type:")
+            typer.echo(typer.style("\nBy channel type:", fg=colors.GREEN, bold=True))
             for ctype, count in type_rows:
-                print(f"  {ctype or 'unknown'}: {count:,}")
+                channel_type = typer.style(ctype or "unknown", fg=colors.MAGENTA)
+                typer.echo(f"  {channel_type}: {count:,}")
 
         cursor.execute("SELECT AVG(LENGTH(text)), MAX(LENGTH(text)) FROM messages")
         len_row = cursor.fetchone()
         if len_row and len_row[0]:
             avg_len, max_len = len_row
-            print(f"\nMessage length: avg {avg_len:.0f} chars, max {max_len:,} chars")
+            typer.echo(typer.style("\nMessage length:", fg=colors.GREEN, bold=True))
+            typer.echo(
+                f"  {typer.style('average', fg=colors.MAGENTA)}: {avg_len:.0f} chars"
+            )
+            typer.echo(f"  {typer.style('max', fg=colors.MAGENTA)}: {max_len:,} chars")
 
         cursor.execute("""
             SELECT channel_name, type, channel_type, COUNT(*) as count
@@ -309,12 +358,13 @@ def stats(
         """)
         rows: list[tuple[str, str, str, int]] = cursor.fetchall()
         if rows:
-            print("\nTop 10 channels:")
+            typer.echo(typer.style("\nTop 10 channels:", fg=colors.GREEN, bold=True))
             for name, msg_type, ctype, count in rows:
-                if ctype == "mpim": # very cursed group dm name parsing
+                if ctype == "mpim":
                     name = ", ".join(name[5:].rsplit("-", 1)[0].split("--"))
                 prefix = "" if msg_type == "im" or ctype == "mpim" else "#"
-                print(f"  {prefix}{name or 'unknown'}: {count:,}")
+                channel = typer.style(f"{prefix}{name or 'unknown'}", fg=colors.MAGENTA)
+                typer.echo(f"  {channel}: {count:,}")
 
 
 if __name__ == "__main__":

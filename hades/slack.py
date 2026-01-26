@@ -5,10 +5,12 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
+import typer
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from slack_sdk.web import SlackResponse
 from tqdm import tqdm
+from typer import colors
 
 from hades.db import get_sync_state, save_messages_batch, set_sync_state
 
@@ -49,7 +51,12 @@ def api_call_with_retry(
                 retry_after = int(
                     e.response.headers.get("Retry-After", base_delay * (2**attempt))  # type: ignore
                 )
-                print(f"\nRate limited. Rotating token, waiting {retry_after}s...")
+                typer.echo(
+                    typer.style(
+                        f"\nRate limited. Rotating token, waiting {retry_after}s...",
+                        fg=colors.YELLOW,
+                    )
+                )
                 time.sleep(retry_after)
             else:
                 raise
@@ -151,14 +158,22 @@ def search_user_messages(
 
     total_messages, _ = _get_search_totals(pool, base_query)
     if not total_messages:
-        print("No public channel messages found for this user.")
+        typer.echo(
+            typer.style(
+                "No public channel messages found for this user.", fg=colors.YELLOW
+            )
+        )
         return 0
 
-    print(f"Found {total_messages} public channel messages")
+    typer.echo(
+        f"Found {typer.style(str(total_messages), fg=colors.CYAN, bold=True)} public channel messages"
+    )
 
     last_after = get_sync_state(conn, "last_after")
     if last_after:
-        print(f"Resuming from after:{last_after}")
+        typer.echo(
+            f"Resuming from {typer.style(f'after:{last_after}', fg=colors.CYAN)}"
+        )
 
     total_saved = 0
     after_date: str | None = last_after
