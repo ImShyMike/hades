@@ -1,4 +1,4 @@
-"""Entrypoint"""
+"""Program entrypoint"""
 
 from hades import app
 
