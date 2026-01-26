@@ -1,13 +1,17 @@
 """funny stuff"""
 
 import base64
+import http.server
 import json
 import os
 import sqlite3
 import time
+import urllib.parse
+import webbrowser
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
+from threading import Event
 from typing import Any
 
 import httpx
@@ -29,7 +33,7 @@ SALT_LEN = 16
 NONCE_LEN = 12
 KEY_LEN = 32  # AES-256
 DB_PATH = "slack_messages.db"
-BATCH_SIZE = 100  # Save to DB every N messages
+MIN_BATCH_SIZE = 100
 
 SlackMessage = dict[str, Any]
 
@@ -196,9 +200,9 @@ def api_call_with_retry(
             func: Callable[..., SlackResponse] = getattr(client, method)
             return func(**kwargs)
         except SlackApiError as e:
-            if e.response.get("error") == "ratelimited": # type: ignore
+            if e.response.get("error") == "ratelimited":  # type: ignore
                 retry_after = int(
-                    e.response.headers.get("Retry-After", base_delay * (2**attempt)) # type: ignore
+                    e.response.headers.get("Retry-After", base_delay * (2**attempt))  # type: ignore
                 )
                 print(f"\nRate limited. Rotating token, waiting {retry_after}s...")
                 time.sleep(retry_after)
@@ -276,7 +280,7 @@ def _fetch_chunk(
         if page_newest and (newest_ts is None or page_newest > newest_ts):
             newest_ts = page_newest
 
-        if len(batch) >= BATCH_SIZE:
+        if len(batch) >= MIN_BATCH_SIZE:
             total_saved += save_messages_batch(conn, batch)
             batch = []
 
@@ -382,7 +386,7 @@ def run(
         if not apps_file.exists():
             print(f"Apps file not found: {apps_file}")
             raise typer.Exit(1)
-        with open(apps_file) as f:
+        with open(apps_file, encoding="utf8") as f:
             apps_list: list[dict[str, Any]] = json.load(f)
         tokens = [a["user_token"] for a in apps_list if a.get("user_token")]
         if not tokens:
@@ -448,7 +452,7 @@ def create_apps(
         print(f"Manifest file not found: {manifest_path}")
         raise typer.Exit(1)
 
-    with open(manifest_path) as f:
+    with open(manifest_path, encoding="utf8") as f:
         manifest = yaml.safe_load(f)
 
     apps: list[dict[str, Any]] = []
@@ -460,7 +464,9 @@ def create_apps(
         app_manifest.setdefault("display_information", {})
         app_manifest["display_information"]["name"] = f"{base_name} {i}"
 
-        print(f"Creating app {i}/{count}: {app_manifest['display_information']['name']}")
+        print(
+            f"Creating app {i}/{count}: {app_manifest['display_information']['name']}"
+        )
 
         response = httpx.post(
             "https://slack.com/api/apps.manifest.create",
@@ -500,7 +506,7 @@ def create_apps(
         i += 1
         time.sleep(2)
 
-    with open(output, "w") as f:
+    with open(output, "w", encoding="utf8") as f:
         json.dump(apps, f, indent=2)
 
     print(f"\nCreated {len(apps)} apps. Credentials saved to {output}")
@@ -523,16 +529,12 @@ def install_apps(
 
     Opens a browser for each app to authorize. Requires a local callback server.
     """
-    import http.server
-    import urllib.parse
-    import webbrowser
-    from threading import Event
 
     if not apps_file.exists():
         print(f"Apps file not found: {apps_file}")
         raise typer.Exit(1)
 
-    with open(apps_file) as f:
+    with open(apps_file, encoding="utf8") as f:
         apps_list: list[dict[str, Any]] = json.load(f)
 
     if not apps_list:
@@ -544,10 +546,13 @@ def install_apps(
     done_event = Event()
 
     class OAuthHandler(http.server.BaseHTTPRequestHandler):
-        def log_message(self, format: str, *args: Any) -> None:
+        """Handler for OAuth callback"""
+
+        def log_message(self, format: str, *args: Any) -> None:  # pylint: disable=redefined-builtin
             pass
 
-        def do_GET(self) -> None:
+        def do_GET(self) -> None:  # pylint: disable=invalid-name
+            """Handle GET request for OAuth callback"""
             nonlocal captured_code
             parsed = urllib.parse.urlparse(self.path)
             if parsed.path == "/callback":
@@ -557,7 +562,9 @@ def install_apps(
                     self.send_response(200)
                     self.send_header("Content-type", "text/html")
                     self.end_headers()
-                    self.wfile.write(b"<html><body><h1>Success!</h1><p>You can close this tab.</p></body></html>")
+                    self.wfile.write(
+                        b"<html><body><h1>Success!</h1><p>You can close this tab.</p></body></html>"
+                    )
                     done_event.set()
                 else:
                     self.send_response(400)
@@ -569,13 +576,17 @@ def install_apps(
 
     for i, app_info in enumerate(apps_list, 1):
         if app_info.get("user_token"):
-            print(f"[{i}/{len(apps_list)}] {app_info['name']}: already has token, skipping")
+            print(
+                f"[{i}/{len(apps_list)}] {app_info['name']}: already has token, skipping"
+            )
             continue
 
         client_id = app_info.get("client_id")
         client_secret = app_info.get("client_secret")
         if not client_id or not client_secret:
-            print(f"[{i}/{len(apps_list)}] {app_info['name']}: missing credentials, skipping")
+            print(
+                f"[{i}/{len(apps_list)}] {app_info['name']}: missing credentials, skipping"
+            )
             continue
 
         print(f"[{i}/{len(apps_list)}] Installing {app_info['name']}...")
@@ -594,7 +605,7 @@ def install_apps(
         server.timeout = 120
 
         webbrowser.open(auth_url)
-        print(f"  Opened browser for authorization...")
+        print("  Opened browser for authorization...")
 
         while not done_event.is_set():
             server.handle_request()
@@ -602,7 +613,7 @@ def install_apps(
         server.server_close()
 
         if not captured_code:
-            print(f"  Failed to get authorization code")
+            print("  Failed to get authorization code")
             continue
 
         token_response = httpx.post(
@@ -624,17 +635,19 @@ def install_apps(
         user_token = token_data.get("authed_user", {}).get("access_token")
         if user_token:
             app_info["user_token"] = user_token
-            print(f"  Got user token!")
+            print("  Got user token!")
         else:
-            print(f"  No user token in response")
+            print("  No user token in response")
 
         time.sleep(1)
 
-    with open(apps_file, "w") as f:
+    with open(apps_file, "w", encoding="utf8") as f:
         json.dump(apps_list, f, indent=2)
 
     tokens_count = sum(1 for a in apps_list if a.get("user_token"))
-    print(f"\n{tokens_count}/{len(apps_list)} apps have user tokens. Saved to {apps_file}")
+    print(
+        f"\n{tokens_count}/{len(apps_list)} apps have user tokens. Saved to {apps_file}"
+    )
 
 
 @app.command()
