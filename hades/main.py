@@ -53,7 +53,7 @@ def load_tokens_from_apps_file(apps_file: Path) -> list[str]:
 
 @app.command()
 def download(
-    user_id: str = typer.Option(..., help="Slack User ID to fetch messages for"),
+    user_id: str = typer.Argument(..., help="Slack User ID to fetch messages for"),
     slack_tokens: list[str] = typer.Option(
         None,
         "--token",
@@ -172,9 +172,7 @@ def download(
 
 @app.command()
 def create_apps(
-    config_token: str = typer.Option(
-        ...,
-        "--config-token",
+    config_token: str = typer.Argument(
         help="Slack App Configuration Token (xoxe.xoxp-...)",
     ),
     count: int = typer.Option(5, help="Number of apps to create"),
