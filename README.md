@@ -7,7 +7,7 @@ transparent message anonymizer
 Requires Python 3.12+
 
 ```bash
-uv tool install hades
+uv tool install hades-slack
 ```
 
 ## Usage

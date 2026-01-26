@@ -233,7 +233,7 @@ wheels = [
 ]
 
 [[package]]
-name = "hades"
+name = "hades-slack"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

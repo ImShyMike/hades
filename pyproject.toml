@@ -1,5 +1,5 @@
 [project]
-name = "hades"
+name = "hades-slack"
 version = "0.1.0"
 description = "transparent message anonymizer"
 readme = "README.md"
@@ -13,6 +13,9 @@ dependencies = [
     "tqdm>=4.67.1",
     "typer>=0.21.1",
 ]
+
+[project.scripts]
+hades = "hades:app"
 
 [dependency-groups]
 dev = [
