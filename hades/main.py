@@ -255,31 +255,66 @@ def stats(
         row = cursor.fetchone()
         total: int = row[0] if row else 0
 
+        if total == 0:
+            print("No messages in database.")
+            return
+
         cursor.execute("SELECT MIN(ts), MAX(ts) FROM messages")
         ts_row = cursor.fetchone()
         min_ts: str | None = ts_row[0] if ts_row else None
         max_ts: str | None = ts_row[1] if ts_row else None
 
+        print(f"Total messages: {total:,}")
+
         if min_ts and max_ts:
             oldest = datetime.fromtimestamp(float(min_ts))
             newest = datetime.fromtimestamp(float(max_ts))
-            print(f"Total messages: {total}")
-            print(f"Date range: {oldest.date()} to {newest.date()}")
-        else:
-            print(f"Total messages: {total}")
+            days_span = (newest - oldest).days or 1
+            print(f"Date range: {oldest.date()} to {newest.date()} ({days_span} days)")
+            print(f"Average: {total / days_span:.1f} messages/day")
+
+        db_size = os.path.getsize(path)
+        print(f"Database size: {db_size / 1024 / 1024:.2f} MB")
+
+        cursor.execute("SELECT COUNT(DISTINCT channel_id) FROM messages")
+        channel_row = cursor.fetchone()
+        unique_channels: int = channel_row[0] if channel_row else 0
+        print(f"Unique channels: {unique_channels}")
 
         cursor.execute("""
-            SELECT channel_name, type, COUNT(*) as count
+            SELECT CASE WHEN type = 'im' THEN 'im' ELSE channel_type END as ctype,
+                   COUNT(*) as count
+            FROM messages
+            GROUP BY ctype
+            ORDER BY count DESC
+        """)
+        type_rows: list[tuple[str, int]] = cursor.fetchall()
+        if type_rows:
+            print("\nBy channel type:")
+            for ctype, count in type_rows:
+                print(f"  {ctype or 'unknown'}: {count:,}")
+
+        cursor.execute("SELECT AVG(LENGTH(text)), MAX(LENGTH(text)) FROM messages")
+        len_row = cursor.fetchone()
+        if len_row and len_row[0]:
+            avg_len, max_len = len_row
+            print(f"\nMessage length: avg {avg_len:.0f} chars, max {max_len:,} chars")
+
+        cursor.execute("""
+            SELECT channel_name, type, channel_type, COUNT(*) as count
             FROM messages
             GROUP BY channel_name
             ORDER BY count DESC
             LIMIT 10
         """)
-        rows: list[tuple[str, str, int]] = cursor.fetchall()
+        rows: list[tuple[str, str, str, int]] = cursor.fetchall()
         if rows:
-            print("\nTop channels:")
-            for name, msg_type, count in rows:
-                print(f"  {msg_type != 'im' and '#' or ''}{name or 'unknown'}: {count}")
+            print("\nTop 10 channels:")
+            for name, msg_type, ctype, count in rows:
+                if ctype == "mpim": # very cursed group dm name parsing
+                    name = ", ".join(name[5:].rsplit("-", 1)[0].split("--"))
+                prefix = "" if msg_type == "im" or ctype == "mpim" else "#"
+                print(f"  {prefix}{name or 'unknown'}: {count:,}")
 
 
 if __name__ == "__main__":
