@@ -1,14 +1,11 @@
 """transparent message anonymizer"""
 
-
 import json
 import os
 import sqlite3
 import time
-
 from datetime import datetime
 from pathlib import Path
-
 from typing import Any
 
 import httpx
@@ -17,8 +14,8 @@ import yaml
 from slack_sdk.errors import SlackApiError
 
 from hades.db import init_db
-from hades.slack import TokenPool, search_user_messages
 from hades.oauth import do_oauth_flow
+from hades.slack import TokenPool, search_user_messages
 
 app = typer.Typer(
     name="hades",

@@ -1,11 +1,12 @@
 """Oauth utilities"""
 
 import http.server
+import time
 import urllib.parse
 import webbrowser
 from threading import Event
 from typing import Any
-import time
+
 import httpx
 
 

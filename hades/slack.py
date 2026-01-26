@@ -18,14 +18,14 @@ SlackMessage = dict[str, Any]
 
 
 class TokenPool:  # pylint: disable=too-few-public-methods
-    """Rotating pool of Slack clients to distribute rate limits."""
+    """Rotating pool of Slack clients to distribute rate limits"""
 
     def __init__(self, tokens: list[str]) -> None:
         self.clients = [WebClient(token=t) for t in tokens]
         self.index = 0
 
     def next(self) -> WebClient:
-        """Get the next client in rotation."""
+        """Get the next client in rotation"""
         client = self.clients[self.index]
         self.index = (self.index + 1) % len(self.clients)
         return client
@@ -38,7 +38,7 @@ def api_call_with_retry(
     base_delay: float = 1.0,
     **kwargs: Any,
 ) -> SlackResponse:
-    """Execute an API call with token rotation and exponential backoff."""
+    """Execute an API call with token rotation and exponential backoff"""
     for attempt in range(max_retries * len(pool.clients)):
         client = pool.next()
         try:
@@ -57,7 +57,7 @@ def api_call_with_retry(
 
 
 def _get_search_totals(pool: TokenPool, query: str) -> tuple[int, int]:
-    """Get total messages and pages for a search query."""
+    """Get total messages and pages for a search query"""
     response = api_call_with_retry(
         pool,
         "search_messages",
@@ -73,7 +73,7 @@ def _get_search_totals(pool: TokenPool, query: str) -> tuple[int, int]:
 
 
 def _fetch_page(pool: TokenPool, query: str, page: int) -> list[SlackMessage]:
-    """Fetch a single page of search results."""
+    """Fetch a single page of search results"""
     response = api_call_with_retry(
         pool,
         "search_messages",
@@ -89,7 +89,7 @@ def _fetch_page(pool: TokenPool, query: str, page: int) -> list[SlackMessage]:
 
 
 def _get_newest_timestamp(messages: list[SlackMessage]) -> str | None:
-    """Get the newest timestamp from a list of messages."""
+    """Get the newest timestamp from a list of messages"""
     if not messages:
         return None
     newest: str = max(msg["ts"] for msg in messages)

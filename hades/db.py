@@ -50,7 +50,7 @@ def set_sync_state(conn: sqlite3.Connection, key: str, value: str) -> None:
 
 
 def _get_channel_type(channel: dict[str, Any]) -> str:
-    """Determine channel type from channel metadata."""
+    """Determine channel type from channel metadata"""
     if channel.get("is_mpim"):
         return "mpim"
     if channel.get("is_private"):
