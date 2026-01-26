@@ -5,7 +5,7 @@ import os
 import sqlite3
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import typer
@@ -82,6 +82,8 @@ def init_db(conn: sqlite3.Connection) -> None:
             text TEXT,
             channel_name TEXT,
             channel_id TEXT,
+            channel_type TEXT,
+            team_id TEXT,
             permalink TEXT
         )
     """)
@@ -112,6 +114,15 @@ def set_sync_state(conn: sqlite3.Connection, key: str, value: str) -> None:
     conn.commit()
 
 
+def _get_channel_type(channel: dict[str, Any]) -> str:
+    """Determine channel type from channel metadata."""
+    if channel.get("is_mpim"):
+        return "mpim"
+    if channel.get("is_private"):
+        return "private"
+    return "public"
+
+
 def save_messages_batch(conn: sqlite3.Connection, messages: list[SlackMessage]) -> int:
     """Save a batch of messages to the database, returns count of new messages"""
     if not messages:
@@ -123,11 +134,13 @@ def save_messages_batch(conn: sqlite3.Connection, messages: list[SlackMessage]) 
     for msg in messages:
         cursor.execute("SELECT 1 FROM messages WHERE ts = ?", (msg["ts"],))
         if cursor.fetchone() is None:
-            channel: dict[str, str] = msg.get("channel", {})
+            channel: dict[str, Any] = msg.get("channel", {})
             cursor.execute(
                 """
-                INSERT INTO messages (ts, user_id, type, text, channel_name, channel_id, permalink)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO messages (
+                    ts, user_id, type, text, channel_name,
+                    channel_id, channel_type, team_id, permalink
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     msg["ts"],
@@ -136,6 +149,8 @@ def save_messages_batch(conn: sqlite3.Connection, messages: list[SlackMessage]) 
                     msg.get("text", ""),
                     channel.get("name", ""),
                     channel.get("id", ""),
+                    _get_channel_type(channel),
+                    msg.get("team", ""),
                     msg.get("permalink", ""),
                 ),
             )
@@ -197,20 +212,12 @@ def _fetch_page(client: WebClient, query: str, page: int) -> list[SlackMessage]:
     return matches
 
 
-def _get_oldest_timestamp(messages: list[SlackMessage]) -> str | None:
-    """Get the oldest timestamp from a list of messages."""
+def _get_newest_timestamp(messages: list[SlackMessage]) -> str | None:
+    """Get the newest timestamp from a list of messages."""
     if not messages:
         return None
-    oldest: str = min(msg["ts"] for msg in messages)
-    return oldest
-
-
-# def _get_newest_timestamp(messages: list[SlackMessage]) -> str | None:
-#     """Get the newest timestamp from a list of messages."""
-#     if not messages:
-#         return None
-#     newest: str = max(msg["ts"] for msg in messages)
-#     return newest
+    newest: str = max(msg["ts"] for msg in messages)
+    return newest
 
 
 def _fetch_chunk(
@@ -221,11 +228,11 @@ def _fetch_chunk(
 ) -> tuple[int, str | None]:
     """
     Fetch up to 100 pages (10k messages) for a query.
-    Returns (saved_count, oldest_timestamp) for pagination.
+    Returns (saved_count, newest_timestamp) for pagination.
     """
     total_saved = 0
     batch: list[SlackMessage] = []
-    oldest_ts: str | None = None
+    newest_ts: str | None = None
     page = 1
 
     _, total_pages = _get_search_totals(client, query)
@@ -238,9 +245,9 @@ def _fetch_chunk(
 
         batch.extend(matches)
 
-        page_oldest = _get_oldest_timestamp(matches)
-        if page_oldest and (oldest_ts is None or page_oldest < oldest_ts):
-            oldest_ts = page_oldest
+        page_newest = _get_newest_timestamp(matches)
+        if page_newest and (newest_ts is None or page_newest > newest_ts):
+            newest_ts = page_newest
 
         if len(batch) >= BATCH_SIZE:
             total_saved += save_messages_batch(conn, batch)
@@ -252,7 +259,7 @@ def _fetch_chunk(
     if batch:
         total_saved += save_messages_batch(conn, batch)
 
-    return total_saved, oldest_ts
+    return total_saved, newest_ts
 
 
 def search_user_messages(
@@ -273,18 +280,18 @@ def search_user_messages(
 
     print(f"Found {total_messages} public channel messages")
 
-    last_before = get_sync_state(conn, "last_before")
-    if last_before:
-        print(f"Resuming from before:{last_before}")
+    last_after = get_sync_state(conn, "last_after")
+    if last_after:
+        print(f"Resuming from after:{last_after}")
 
     total_saved = 0
-    before_date: str | None = last_before
+    after_date: str | None = last_after
 
     pbar = tqdm(total=total_messages, desc="Fetching messages", unit="msg")
 
     while True:
-        if before_date:
-            query = f"{base_query} before:{before_date}"
+        if after_date:
+            query = f"{base_query} after:{after_date}"
         else:
             query = base_query
 
@@ -292,15 +299,16 @@ def search_user_messages(
         if not chunk_total:
             break
 
-        saved, oldest_ts = _fetch_chunk(client, conn, query, pbar)
+        saved, newest_ts = _fetch_chunk(client, conn, query, pbar)
         total_saved += saved
 
-        if not oldest_ts:
+        if not newest_ts:
             break
 
-        oldest_dt = datetime.fromtimestamp(float(oldest_ts))
-        before_date = oldest_dt.strftime("%Y-%m-%d")
-        set_sync_state(conn, "last_before", before_date)
+        newest_dt = datetime.fromtimestamp(float(newest_ts))
+        padded_dt = newest_dt - timedelta(days=1)
+        after_date = padded_dt.strftime("%Y-%m-%d")
+        set_sync_state(conn, "last_after", after_date)
 
         if not saved:
             break
