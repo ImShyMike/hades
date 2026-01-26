@@ -120,6 +120,10 @@ def _get_channel_type(channel: dict[str, Any]) -> str:
         return "mpim"
     if channel.get("is_private"):
         return "private"
+    if channel.get("is_im"):
+        return "im"
+    if channel.get("is_channel"):
+        return "channel"
     return "public"
 
 
@@ -160,32 +164,50 @@ def save_messages_batch(conn: sqlite3.Connection, messages: list[SlackMessage]) 
     return new_count
 
 
+class TokenPool:  # pylint: disable=too-few-public-methods
+    """Rotating pool of Slack clients to distribute rate limits."""
+
+    def __init__(self, tokens: list[str]) -> None:
+        self.clients = [WebClient(token=t) for t in tokens]
+        self.index = 0
+
+    def next(self) -> WebClient:
+        """Get the next client in rotation."""
+        client = self.clients[self.index]
+        self.index = (self.index + 1) % len(self.clients)
+        return client
+
+
 def api_call_with_retry(
-    func: Callable[..., SlackResponse],
+    pool: TokenPool,
+    method: str,
     max_retries: int = 5,
     base_delay: float = 1.0,
     **kwargs: Any,
 ) -> SlackResponse:
-    """Execute an API call with exponential backoff on rate limits"""
-    for attempt in range(max_retries):
+    """Execute an API call with token rotation and exponential backoff."""
+    for attempt in range(max_retries * len(pool.clients)):
+        client = pool.next()
         try:
+            func: Callable[..., SlackResponse] = getattr(client, method)
             return func(**kwargs)
         except SlackApiError as e:
             if e.response.get("error") == "ratelimited": # type: ignore
                 retry_after = int(
                     e.response.headers.get("Retry-After", base_delay * (2**attempt)) # type: ignore
                 )
-                print(f"\nRate limited. Waiting {retry_after}s...")
+                print(f"\nRate limited. Rotating token, waiting {retry_after}s...")
                 time.sleep(retry_after)
             else:
                 raise
-    raise RuntimeError(f"Max retries ({max_retries}) exceeded")
+    raise RuntimeError(f"Max retries exceeded across all {len(pool.clients)} tokens")
 
 
-def _get_search_totals(client: WebClient, query: str) -> tuple[int, int]:
+def _get_search_totals(pool: TokenPool, query: str) -> tuple[int, int]:
     """Get total messages and pages for a search query."""
     response = api_call_with_retry(
-        client.search_messages, # type: ignore
+        pool,
+        "search_messages",
         query=query,
         count=1,
         page=1,
@@ -197,10 +219,11 @@ def _get_search_totals(client: WebClient, query: str) -> tuple[int, int]:
     return total_messages, total_pages
 
 
-def _fetch_page(client: WebClient, query: str, page: int) -> list[SlackMessage]:
+def _fetch_page(pool: TokenPool, query: str, page: int) -> list[SlackMessage]:
     """Fetch a single page of search results."""
     response = api_call_with_retry(
-        client.search_messages, # type: ignore
+        pool,
+        "search_messages",
         query=query,
         count=100,
         page=page,
@@ -221,7 +244,7 @@ def _get_newest_timestamp(messages: list[SlackMessage]) -> str | None:
 
 
 def _fetch_chunk(
-    client: WebClient,
+    pool: TokenPool,
     conn: sqlite3.Connection,
     query: str,
     pbar: "tqdm[Any]",
@@ -235,11 +258,11 @@ def _fetch_chunk(
     newest_ts: str | None = None
     page = 1
 
-    _, total_pages = _get_search_totals(client, query)
+    _, total_pages = _get_search_totals(pool, query)
     max_page = min(total_pages, 100)
 
     while page <= max_page:
-        matches = _fetch_page(client, query, page)
+        matches = _fetch_page(pool, query, page)
         if not matches:
             break
 
@@ -263,7 +286,7 @@ def _fetch_chunk(
 
 
 def search_user_messages(
-    client: WebClient,
+    pool: TokenPool,
     user_id: str,
     conn: sqlite3.Connection,
 ) -> int:
@@ -273,7 +296,7 @@ def search_user_messages(
     """
     base_query = f"from:<@{user_id}>"
 
-    total_messages, _ = _get_search_totals(client, base_query)
+    total_messages, _ = _get_search_totals(pool, base_query)
     if not total_messages:
         print("No public channel messages found for this user.")
         return 0
@@ -295,11 +318,11 @@ def search_user_messages(
         else:
             query = base_query
 
-        chunk_total, _ = _get_search_totals(client, query)
+        chunk_total, _ = _get_search_totals(pool, query)
         if not chunk_total:
             break
 
-        saved, newest_ts = _fetch_chunk(client, conn, query, pbar)
+        saved, newest_ts = _fetch_chunk(pool, conn, query, pbar)
         total_saved += saved
 
         if not newest_ts:
@@ -321,9 +344,10 @@ def search_user_messages(
 @app.command()
 def run(
     user_id: str = typer.Option(..., help="Slack User ID to fetch messages for"),
-    slack_token: str = typer.Option(
+    slack_tokens: list[str] = typer.Option(
         ...,
-        help="Slack User Token (requires search:read scope)",
+        "--token",
+        help="Slack User Token(s). Pass multiple times to rotate.",
     ),
     resume: bool = typer.Option(
         False,
@@ -333,10 +357,14 @@ def run(
     """
     Fetch all public channel messages from a Slack user using the search API.
 
-    NOTE: This requires a USER token (xoxp-...) with search:read scope,
-    not a bot token. Bot tokens cannot use the search API.
+    NOTE: This requires USER tokens (xoxp-...) with search:read scope,
+    not bot tokens. Bot tokens cannot use the search API.
+
+    Pass multiple tokens to distribute rate limits:
+        --token xoxp-... --token xoxp-... --token xoxp-...
     """
-    client = WebClient(token=slack_token)
+    pool = TokenPool(slack_tokens)
+    print(f"Using {len(slack_tokens)} token(s)")
 
     with sqlite3.connect(DB_PATH) as conn:
         init_db(conn)
@@ -347,7 +375,7 @@ def run(
             conn.commit()
 
         try:
-            total = search_user_messages(client, user_id, conn)
+            total = search_user_messages(pool, user_id, conn)
             print(f"\nSaved {total} new messages to {DB_PATH}")
         except KeyboardInterrupt:
             print("\n\nInterrupted! Progress saved. Use --resume to continue.")
