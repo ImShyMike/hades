@@ -16,6 +16,8 @@ oauth_config:
       - channels:read
       - channels:history
       - search:read
+      - chat:write
+      - links:write
     bot:
       - channels:read
       - channels:history
