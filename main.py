@@ -247,7 +247,7 @@ def _fetch_chunk(
             batch = []
 
         page += 1
-        pbar.update(1)
+        pbar.update(len(matches))
 
     if batch:
         total_saved += save_messages_batch(conn, batch)
