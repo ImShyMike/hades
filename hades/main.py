@@ -19,7 +19,7 @@ from typer import colors
 from hades.crypto import decrypt_text, derive_key, encrypt_text
 from hades.db import init_db
 from hades.oauth import do_oauth_flow
-from hades.slack import TokenPool, search_user_messages
+from hades.slack import TokenPool, api_call_with_retry, search_user_messages
 from hades.unicode import WORD_JOINER
 
 app = typer.Typer(
@@ -30,6 +30,25 @@ app = typer.Typer(
 )
 
 DEFAULT_DB_PATH = "slack_messages.db"
+
+
+def load_tokens_from_apps_file(apps_file: Path) -> list[str]:
+    """Load user tokens from an apps.json file."""
+    if not apps_file.exists():
+        typer.echo(typer.style(f"Apps file not found: {apps_file}", fg=colors.RED))
+        raise typer.Exit(1)
+    with open(apps_file, encoding="utf8") as f:
+        apps_list: list[dict[str, Any]] = json.load(f)
+    tokens = [a["user_token"] for a in apps_list if a.get("user_token")]
+    if not tokens:
+        typer.echo(
+            typer.style(
+                "No user tokens found in apps file. Run 'install-apps' first.",
+                fg=colors.RED,
+            )
+        )
+        raise typer.Exit(1)
+    return tokens
 
 
 @app.command()
@@ -51,6 +70,17 @@ def download(
         "--db",
         help="Path to SQLite database file",
     ),
+    purge: bool = typer.Option(
+        False,
+        "--purge",
+        help="Purge existing data before downloading",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompt when purging",
+    ),
     resume: bool = typer.Option(
         False,
         help="Resume from last saved position",
@@ -71,20 +101,7 @@ def download(
     tokens: list[str] = []
 
     if apps_file:
-        if not apps_file.exists():
-            typer.echo(typer.style(f"Apps file not found: {apps_file}", fg=colors.RED))
-            raise typer.Exit(1)
-        with open(apps_file, encoding="utf8") as f:
-            apps_list: list[dict[str, Any]] = json.load(f)
-        tokens = [a["user_token"] for a in apps_list if a.get("user_token")]
-        if not tokens:
-            typer.echo(
-                typer.style(
-                    "No user tokens found in apps file. Run 'install-apps' first.",
-                    fg=colors.RED,
-                )
-            )
-            raise typer.Exit(1)
+        tokens.extend(load_tokens_from_apps_file(apps_file))
 
     if slack_tokens:
         tokens.extend(slack_tokens)
@@ -101,6 +118,24 @@ def download(
     )
 
     with sqlite3.connect(path) as conn:
+        if purge and not resume:
+            if not yes:
+                typer.echo(
+                    typer.style(
+                        f"WARNING: This will DELETE ALL DATA in {path}", fg=colors.RED
+                    )
+                )
+                confirm = typer.prompt(
+                    typer.style("Type 'purge' to proceed", fg=colors.YELLOW)
+                )
+                if confirm.lower() != "purge":
+                    typer.echo(typer.style("Aborted.", fg=colors.RED))
+                    raise typer.Exit(1)
+            cursor = conn.cursor()
+            cursor.execute("DROP TABLE IF EXISTS messages")
+            cursor.execute("DROP TABLE IF EXISTS sync_state")
+            conn.commit()
+
         init_db(conn)
 
         if not resume:
@@ -382,6 +417,7 @@ class EncryptMode(Enum):
     TEXT = "text"
     INVISIBLE = "invisible"
 
+
 @app.command()
 def encrypt(
     password: str = typer.Argument(
@@ -391,6 +427,17 @@ def encrypt(
     older_than: float = typer.Argument(
         ...,
         help="Only encrypt messages older than X days",
+    ),
+    slack_tokens: list[str] = typer.Option(
+        None,
+        "--token",
+        help="Slack User Token(s). Pass multiple times to rotate.",
+    ),
+    apps_file: Path = typer.Option(
+        None,
+        "--apps",
+        "-a",
+        help="Path to apps.json to use user_tokens from",
     ),
     mode: EncryptMode = typer.Option(
         EncryptMode.TEXT,
@@ -404,13 +451,61 @@ def encrypt(
         "--db",
         help="Path to SQLite database file",
     ),
-    dry_run: bool = typer.Option(
+    execute: bool = typer.Option(
         False,
-        "--dry-run",
-        help="Show what would be encrypted",
+        "--execute",
+        help="Actually perform decryption instead of dry run",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompt",
     ),
 ) -> None:
     """Encrypt your slack messages transparently"""
+
+    tokens: list[str] = []
+
+    if apps_file:
+        tokens.extend(load_tokens_from_apps_file(apps_file))
+
+    if slack_tokens:
+        tokens.extend(slack_tokens)
+
+    if not tokens and execute:
+        typer.echo(
+            typer.style("No tokens provided. Use --token or --apps.", fg=colors.RED)
+        )
+        raise typer.Exit(1)
+
+    pool = TokenPool(tokens) if tokens else None
+    if pool:
+        typer.echo(
+            f"Using {typer.style(str(len(tokens)), fg=colors.CYAN, bold=True)} token(s)"
+        )
+
+    if not yes and execute:
+        typer.echo(
+            typer.style(
+                "WARNING: This will modify your Slack messages by encrypting them.",
+                fg=colors.RED,
+                bold=True,
+            )
+        )
+        typer.echo(
+            typer.style(
+                "This action cannot be undone without the password used.",
+                fg=colors.RED,
+                bold=True,
+            )
+        )
+        confirm = typer.prompt(
+            typer.style("Type 'encrypt' to proceed", fg=colors.YELLOW)
+        )
+        if confirm.lower() != "encrypt":
+            typer.echo(typer.style("Aborted.", fg=colors.RED))
+            raise typer.Exit(1)
 
     with sqlite3.connect(path) as conn:
         cursor = conn.cursor()
@@ -452,14 +547,29 @@ def encrypt(
 
                 new_text = str(encrypted or "") + chr(WORD_JOINER) + str(filler or "")
 
-                if dry_run:
+                if not execute:
                     pbar.write(
                         f"[DRY RUN] '{original_text[:30]}{len(original_text) > 30 and '...' or ''}'"
                         f" -> '{filler[:30]}{len(filler) > 30 and '...' or ''}'"
                     )
                 else:
-                    # TODO: send edit request to slack here
-                    pass
+                    assert pool is not None
+                    try:
+                        api_call_with_retry(
+                            pool,
+                            "chat_update",
+                            channel=channel_id,
+                            ts=ts,
+                            text=new_text,
+                        )
+                    except SlackApiError as e:
+                        pbar.write(
+                            typer.style(
+                                f"Failed to update {channel_id}/{ts}: {e.response['error']}",
+                                fg=colors.RED,
+                            )
+                        )
+                        continue
 
                 updated += 1
                 postfix: dict[str, object] = {
@@ -468,6 +578,176 @@ def encrypt(
                 }
                 pbar.set_postfix(postfix)  # type: ignore
                 pbar.update(1)
+
+
+@app.command()
+def decrypt(
+    password: str = typer.Argument(
+        ...,
+        help="Password used for encryption",
+    ),
+    younger_than: float = typer.Argument(
+        ...,
+        help="Only decrypt messages younger than X days",
+    ),
+    slack_tokens: list[str] = typer.Option(
+        None,
+        "--token",
+        help="Slack User Token(s). Pass multiple times to rotate.",
+    ),
+    apps_file: Path = typer.Option(
+        None,
+        "--apps",
+        "-a",
+        help="Path to apps.json to use user_tokens from",
+    ),
+    path: Path = typer.Option(
+        DEFAULT_DB_PATH,
+        "--db",
+        help="Path to SQLite database file",
+    ),
+    execute: bool = typer.Option(
+        False,
+        "--execute",
+        help="Actually perform decryption instead of dry run",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompt",
+    ),
+) -> None:
+    """Decrypt previously encrypted slack messages"""
+
+    tokens: list[str] = []
+
+    if apps_file:
+        tokens.extend(load_tokens_from_apps_file(apps_file))
+
+    if slack_tokens:
+        tokens.extend(slack_tokens)
+
+    if not tokens and execute:
+        typer.echo(
+            typer.style("No tokens provided. Use --token or --apps.", fg=colors.RED)
+        )
+        raise typer.Exit(1)
+
+    pool = TokenPool(tokens) if tokens else None
+    if pool:
+        typer.echo(
+            f"Using {typer.style(str(len(tokens)), fg=colors.CYAN, bold=True)} token(s)"
+        )
+
+    if not yes and execute:
+        typer.echo(
+            typer.style(
+                "WARNING: This will modify your Slack messages by decrypting them.",
+                fg=colors.YELLOW,
+                bold=True,
+            )
+        )
+        confirm = typer.prompt(
+            typer.style("Type 'decrypt' to proceed", fg=colors.YELLOW)
+        )
+        if confirm.lower() != "decrypt":
+            typer.echo(typer.style("Aborted.", fg=colors.RED))
+            raise typer.Exit(1)
+
+    with sqlite3.connect(path) as conn:
+        cursor = conn.cursor()
+
+        cutoff_ts = time.time() - (younger_than * 86400)
+        cursor.execute(
+            "SELECT ts, channel_id, text FROM messages WHERE ts > ? ORDER BY ts DESC",
+            (cutoff_ts,),
+        )
+        rows: list[tuple[str, str, str]] = cursor.fetchall()
+
+        total = len(rows)
+        if total == 0:
+            typer.echo(typer.style("No messages found.", fg=colors.YELLOW))
+            return
+
+        typer.echo(
+            f"Checking {typer.style(str(total), fg=colors.CYAN, bold=True)} messages..."
+        )
+
+        decrypted_count = 0
+        skipped = 0
+        with tqdm.tqdm(total=total, unit="msg") as pbar:
+            for ts, channel_id, text in rows:
+                if not text or chr(WORD_JOINER) not in text:
+                    skipped += 1
+                    pbar.update(1)
+                    continue
+
+                encrypted_part = text.split(chr(WORD_JOINER))[0]
+                if not encrypted_part:
+                    skipped += 1
+                    pbar.update(1)
+                    continue
+
+                try:
+                    original_text = decrypt_text(encrypted_part, password)
+                except ValueError:  # pylint: disable=broad-except
+                    skipped += 1
+                    pbar.update(1)
+                    continue
+                except Exception as e:  # pylint: disable=broad-except
+                    pbar.write(
+                        typer.style(
+                            f"Failed to decrypt message {channel_id}/{ts}: {str(e)}",
+                            fg=colors.RED,
+                        )
+                    )
+                    skipped += 1
+                    pbar.update(1)
+                    continue
+
+                if not execute:
+                    filler = (
+                        text.split(chr(WORD_JOINER), 1)[1]
+                        if chr(WORD_JOINER) in text
+                        else ""
+                    )
+                    pbar.write(
+                        f"[DRY RUN] '{filler[:30]}{len(filler) > 30 and '...' or ''}'"
+                        f" -> '{original_text[:30]}{len(original_text) > 30 and '...' or ''}'"
+                    )
+                else:
+                    assert pool is not None
+                    try:
+                        api_call_with_retry(
+                            pool,
+                            "chat_update",
+                            channel=channel_id,
+                            ts=ts,
+                            text=original_text,
+                        )
+                    except SlackApiError as e:
+                        pbar.write(
+                            typer.style(
+                                f"Failed to update {channel_id}/{ts}: {e.response['error']}",
+                                fg=colors.RED,
+                            )
+                        )
+                        continue
+
+                decrypted_count += 1
+                postfix: dict[str, object] = {
+                    "channel": channel_id,
+                    "ts": ts,
+                }
+                pbar.set_postfix(postfix)  # type: ignore
+                pbar.update(1)
+
+        typer.echo(
+            f"\n{'Would decrypt' if not execute else 'Decrypted'} "
+            f"{typer.style(str(decrypted_count), fg=colors.GREEN, bold=True)} messages "
+            f"(skipped {skipped} non-encrypted)"
+        )
 
 
 if __name__ == "__main__":
