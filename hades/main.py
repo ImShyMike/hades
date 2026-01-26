@@ -129,7 +129,7 @@ def create_apps(
     Create multiple Slack apps from a manifest and dump their credentials.
 
     Requires an App Configuration Token from https://api.slack.com/apps
-    (under "Your App Configuration Tokens").
+    (under "Your App Configuration Tokens", click "Generate" and copy the "Access Token").
     """
     if not manifest_path.exists():
         print(f"Manifest file not found: {manifest_path}")
