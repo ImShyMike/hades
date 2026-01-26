@@ -51,7 +51,8 @@ def do_oauth_flow(port: int, apps_list: list[dict[str, Any]]):
     for i, app_info in enumerate(apps_list, 1):
         if app_info.get("user_token"):
             typer.echo(
-                f"[{typer.style(f'{i}/{len(apps_list)}', fg=colors.CYAN)}] {app_info['name']}: {typer.style('already has token, skipping', fg=colors.YELLOW)}"
+                f"[{typer.style(f'{i}/{len(apps_list)}', fg=colors.CYAN)}] {app_info['name']}: "
+                f"{typer.style('already has token, skipping', fg=colors.YELLOW)}"
             )
             continue
 
@@ -59,12 +60,14 @@ def do_oauth_flow(port: int, apps_list: list[dict[str, Any]]):
         client_secret = app_info.get("client_secret")
         if not client_id or not client_secret:
             typer.echo(
-                f"[{typer.style(f'{i}/{len(apps_list)}', fg=colors.CYAN)}] {app_info['name']}: {typer.style('missing credentials, skipping', fg=colors.RED)}"
+                f"[{typer.style(f'{i}/{len(apps_list)}', fg=colors.CYAN)}] {app_info['name']}: "
+                f"{typer.style('missing credentials, skipping', fg=colors.RED)}"
             )
             continue
 
         typer.echo(
-            f"[{typer.style(f'{i}/{len(apps_list)}', fg=colors.CYAN)}] Installing {app_info['name']}..."
+            f"[{typer.style(f'{i}/{len(apps_list)}', fg=colors.CYAN)}] "
+            f"Installing {app_info['name']}..."
         )
 
         auth_url = (

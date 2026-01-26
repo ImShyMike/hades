@@ -166,7 +166,8 @@ def search_user_messages(
         return 0
 
     typer.echo(
-        f"Found {typer.style(str(total_messages), fg=colors.CYAN, bold=True)} public channel messages"
+        f"Found {typer.style(str(total_messages), fg=colors.CYAN, bold=True)} "
+        f"public channel messages"
     )
 
     last_after = get_sync_state(conn, "last_after")

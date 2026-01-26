@@ -107,7 +107,8 @@ def run(
         try:
             total = search_user_messages(pool, user_id, conn)
             typer.echo(
-                f"\nSaved {typer.style(str(total), fg=colors.GREEN, bold=True)} new messages to {path}"
+                f"\nSaved {typer.style(str(total), fg=colors.GREEN, bold=True)} "
+                f"new messages to {path}"
             )
         except KeyboardInterrupt:
             typer.echo(
@@ -175,7 +176,8 @@ def create_apps(
         app_manifest["display_information"]["name"] = f"{base_name} {i}"
 
         typer.echo(
-            f"Creating app {typer.style(f'{i}/{count}', fg=colors.CYAN)}: {app_manifest['display_information']['name']}"
+            f"Creating app {typer.style(f'{i}/{count}', fg=colors.CYAN)}: "
+            f"{app_manifest['display_information']['name']}"
         )
 
         response = httpx.post(
@@ -229,7 +231,8 @@ def create_apps(
         json.dump(apps, f, indent=2)
 
     typer.echo(
-        f"\nCreated {typer.style(str(len(apps)), fg=colors.GREEN, bold=True)} apps. Credentials saved to {output}"
+        f"\nCreated {typer.style(str(len(apps)), fg=colors.GREEN, bold=True)} apps. "
+        f"Credentials saved to {output}"
     )
     typer.echo("\nTo install apps and get user tokens, run:")
     typer.echo(typer.style("  python main.py install-apps", fg=colors.CYAN))
@@ -269,7 +272,8 @@ def install_apps(
 
     tokens_count = sum(1 for a in apps_list if a.get("user_token"))
     typer.echo(
-        f"\n{typer.style(f'{tokens_count}/{len(apps_list)}', fg=colors.GREEN, bold=True)} apps have user tokens. Saved to {apps_file}"
+        f"\n{typer.style(f'{tokens_count}/{len(apps_list)}', fg=colors.GREEN, bold=True)} "
+        f"apps have user tokens. Saved to {apps_file}"
     )
 
 
