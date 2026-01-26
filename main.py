@@ -32,7 +32,7 @@ ITERATIONS = 200_000
 SALT_LEN = 16
 NONCE_LEN = 12
 KEY_LEN = 32  # AES-256
-DB_PATH = "slack_messages.db"
+DEFAULT_DB_PATH = "slack_messages.db"
 MIN_BATCH_SIZE = 100
 
 SlackMessage = dict[str, Any]
@@ -363,6 +363,11 @@ def run(
         "-a",
         help="Path to apps.json to use user_tokens from",
     ),
+    path: Path = typer.Option(
+        DEFAULT_DB_PATH,
+        "--db",
+        help="Path to SQLite database file",
+    ),
     resume: bool = typer.Option(
         False,
         help="Resume from last saved position",
@@ -403,7 +408,7 @@ def run(
     pool = TokenPool(tokens)
     print(f"Using {len(tokens)} token(s)")
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(path) as conn:
         init_db(conn)
 
         if not resume:
@@ -413,7 +418,7 @@ def run(
 
         try:
             total = search_user_messages(pool, user_id, conn)
-            print(f"\nSaved {total} new messages to {DB_PATH}")
+            print(f"\nSaved {total} new messages to {path}")
         except KeyboardInterrupt:
             print("\n\nInterrupted! Progress saved. Use --resume to continue.")
         except SlackApiError as e:
@@ -651,13 +656,19 @@ def install_apps(
 
 
 @app.command()
-def stats() -> None:
+def stats(
+    path: Path = typer.Option(
+        DEFAULT_DB_PATH,
+        "--db",
+        help="Path to SQLite database file",
+    ),
+) -> None:
     """Show statistics about saved messages"""
-    if not os.path.exists(DB_PATH):
+    if not os.path.exists(path):
         print("No database found.")
         return
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(path) as conn:
         cursor = conn.cursor()
 
         cursor.execute("SELECT COUNT(*) FROM messages")
