@@ -5,18 +5,22 @@ import os
 import sqlite3
 import time
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 import httpx
+import tqdm
 import typer
 import yaml
 from slack_sdk.errors import SlackApiError
 from typer import colors
 
+from hades.crypto import decrypt_text, derive_key, encrypt_text
 from hades.db import init_db
 from hades.oauth import do_oauth_flow
 from hades.slack import TokenPool, search_user_messages
+from hades.unicode import WORD_JOINER
 
 app = typer.Typer(
     name="hades",
@@ -29,7 +33,7 @@ DEFAULT_DB_PATH = "slack_messages.db"
 
 
 @app.command()
-def run(
+def download(
     user_id: str = typer.Option(..., help="Slack User ID to fetch messages for"),
     slack_tokens: list[str] = typer.Option(
         None,
@@ -53,7 +57,7 @@ def run(
     ),
 ) -> None:
     """
-    Fetch all public channel messages from a Slack user using the search API.
+    Fetch all public channel messages from a Slack user.
 
     NOTE: This requires USER tokens (xoxp-...) with search:read scope,
     not bot tokens. Bot tokens cannot use the search API.
@@ -369,6 +373,101 @@ def stats(
                 prefix = "" if msg_type == "im" or ctype == "mpim" else "#"
                 channel = typer.style(f"{prefix}{name or 'unknown'}", fg=colors.MAGENTA)
                 typer.echo(f"  {channel}: {count:,}")
+
+
+class EncryptMode(Enum):
+    """Possible encryption modes"""
+
+    RANDOM = "random"
+    TEXT = "text"
+    INVISIBLE = "invisible"
+
+@app.command()
+def encrypt(
+    password: str = typer.Argument(
+        ...,
+        help="Password to use for encryption",
+    ),
+    older_than: float = typer.Argument(
+        ...,
+        help="Only encrypt messages older than X days",
+    ),
+    mode: EncryptMode = typer.Option(
+        EncryptMode.TEXT,
+        "--mode",
+        case_sensitive=False,
+        help="Encryption mode: random, text, invisible",
+    ),
+    text: str = typer.Option(None, help="Text to use if mode is 'text'"),
+    path: Path = typer.Option(
+        DEFAULT_DB_PATH,
+        "--db",
+        help="Path to SQLite database file",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show what would be encrypted",
+    ),
+) -> None:
+    """Encrypt your slack messages transparently"""
+
+    with sqlite3.connect(path) as conn:
+        cursor = conn.cursor()
+
+        cutoff_ts = time.time() - (older_than * 86400)
+        cursor.execute(
+            "SELECT ts, channel_id, text FROM messages WHERE ts < ? ORDER BY ts DESC",
+            (cutoff_ts,),
+        )
+        rows: list[tuple[str, str, str]] = cursor.fetchall()
+
+        total = len(rows)
+        if total == 0:
+            typer.echo(typer.style("No messages found to encrypt.", fg=colors.YELLOW))
+            return
+
+        typer.echo(
+            f"Encrypting {typer.style(str(total), fg=colors.CYAN, bold=True)} messages..."
+        )
+
+        key, salt = derive_key(password)
+
+        updated = 0
+        with tqdm.tqdm(total=total, unit="msg") as pbar:
+            for ts, channel_id, original_text in rows:
+                if original_text.strip() == "":
+                    pbar.update(1)
+                    continue  # skip empty messages
+
+                encrypted = encrypt_text(original_text, key, salt)
+
+                filler = ""
+                if mode == EncryptMode.RANDOM:
+                    filler = os.urandom(32).hex()
+                elif mode == EncryptMode.TEXT:
+                    filler = text or "[anonymized with hades]"
+                elif mode == EncryptMode.INVISIBLE:
+                    filler = ""
+
+                new_text = str(encrypted or "") + chr(WORD_JOINER) + str(filler or "")
+
+                if dry_run:
+                    pbar.write(
+                        f"[DRY RUN] '{original_text[:30]}{len(original_text) > 30 and '...' or ''}'"
+                        f" -> '{filler[:30]}{len(filler) > 30 and '...' or ''}'"
+                    )
+                else:
+                    # TODO: send edit request to slack here
+                    pass
+
+                updated += 1
+                postfix: dict[str, object] = {
+                    "channel": channel_id,
+                    "ts": ts,
+                }
+                pbar.set_postfix(postfix)  # type: ignore
+                pbar.update(1)
 
 
 if __name__ == "__main__":
