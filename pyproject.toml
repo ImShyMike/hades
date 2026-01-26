@@ -18,8 +18,3 @@ dev = [
     "pylint>=4.0.4",
     "types-tqdm>=4.67.0.20250809",
 ]
-
-[tool.mypy]
-python_version = "3.12"
-strict = true
-ignore_missing_imports = true
