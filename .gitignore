@@ -1,0 +1,4 @@
+apps.json
+slack_messages*.db
+.venv/
+__pycache__/

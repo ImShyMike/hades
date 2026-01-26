@@ -1,0 +1,26 @@
+display_information:
+  name: Hades
+  description: transparent message anonymizer
+  background_color: "#000000"
+
+features:
+  bot_user:
+    display_name: Hades
+    always_online: false
+
+oauth_config:
+  redirect_urls:
+    - http://localhost:3000/callback
+  scopes:
+    user:
+      - channels:read
+      - channels:history
+      - search:read
+    bot:
+      - channels:read
+      - channels:history
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
