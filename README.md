@@ -4,6 +4,8 @@ transparent message anonymizer
 
 ## Installation
 
+Requires Python 3.12+
+
 ```bash
 uv tool install hades
 ```
@@ -47,6 +49,10 @@ hades download YOUR_USER_ID_HERE --apps apps.json
 
 This will use the apps you created to download all your messages and save them to `slack_messages.db`.
 
+Use `--resume` to continue a previously interrupted download.
+
+Use `--purge` to delete any existing messages in the database before downloading.
+
 ### Seeing your message stats
 
 Now that you have your messages downloaded, you can see some stats about them with:
@@ -66,6 +72,14 @@ hades encrypt YOUR_PASSWORD_HERE ENCRYPT_OLDER_THAN --apps apps.json --execute
 `ENCRYPT_OLDER_THAN` is the amount of days old a message has to be to be encrypted. For example, `30` will encrypt all messages older than 30 days and `0` will encrypt all messages.
 
 Removing the `--execute` flag will do a dry run and show you how many messages would be encrypted without actually encrypting them on Slack.
+
+#### Encryption modes
+
+Use `--mode` to control what replaces your message text:
+
+- `text` (default): Replace with custom text via `--text` (default: `[anonymized with hades]`)
+- `random`: Replace with random hex string
+- `invisible`: Make the message invisible
 
 ### Decrypting your messages
 
