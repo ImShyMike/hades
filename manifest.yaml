@@ -1,6 +1,6 @@
 display_information:
   name: Hades
-  description: transparent message anonymizer
+  description: transparent slack message anonymizer
   background_color: "#000000"
 
 features:

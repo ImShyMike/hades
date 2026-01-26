@@ -1,7 +1,7 @@
 [project]
 name = "hades-slack"
-version = "0.1.0"
-description = "transparent message anonymizer"
+version = "0.1.2"
+description = "transparent slack message anonymizer"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,6 +13,13 @@ dependencies = [
     "tqdm>=4.67.1",
     "typer>=0.21.1",
 ]
+license = "GPL-3.0"
+keywords = ["slack", "privacy", "encryption", "anonymizer", "messages"]
+
+[project.urls]
+Homepage = "https://github.com/ImShyMike/hades"
+Repository = "https://github.com/ImShyMike/hades"
+Issues = "https://github.com/ImShyMike/hades/issues"
 
 [project.scripts]
 hades = "hades:app"

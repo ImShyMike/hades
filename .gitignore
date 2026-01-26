@@ -2,3 +2,4 @@ apps.json
 slack_messages*.db
 .venv/
 __pycache__/
+*.egg-info/

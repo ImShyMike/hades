@@ -1,4 +1,4 @@
-"""transparent message anonymizer"""
+"""transparent slack message anonymizer"""
 
 import json
 import os
@@ -24,7 +24,7 @@ from hades.unicode import WORD_JOINER
 
 app = typer.Typer(
     name="hades",
-    help="transparent message anonymizer",
+    help="transparent slack message anonymizer",
     add_completion=True,
     no_args_is_help=True,
 )

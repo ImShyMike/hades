@@ -1,6 +1,6 @@
 # hades
 
-transparent message anonymizer
+transparent slack message anonymizer
 
 ## Installation
 
