@@ -269,17 +269,17 @@ def stats(
             print(f"Total messages: {total}")
 
         cursor.execute("""
-            SELECT channel_name, COUNT(*) as count
+            SELECT channel_name, type, COUNT(*) as count
             FROM messages
             GROUP BY channel_name
             ORDER BY count DESC
             LIMIT 10
         """)
-        rows: list[tuple[str, int]] = cursor.fetchall()
+        rows: list[tuple[str, str, int]] = cursor.fetchall()
         if rows:
             print("\nTop channels:")
-            for name, count in rows:
-                print(f"  #{name or 'unknown'}: {count}")
+            for name, msg_type, count in rows:
+                print(f"  {msg_type != 'im' and '#' or ''}{name or 'unknown'}: {count}")
 
 
 if __name__ == "__main__":
