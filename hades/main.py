@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Optional
 
 import httpx
 import tqdm
@@ -416,6 +416,15 @@ class EncryptMode(Enum):
     INVISIBLE = "invisible"
 
 
+CHANNEL_TYPE_ALIASES = {
+    "private": "private",
+    "dm": "im",
+    "public": "channel",
+    "gdm": "mpim",
+}
+ALL_CHANNEL_TYPES = list(CHANNEL_TYPE_ALIASES.values())
+
+
 @app.command()
 def encrypt(
     password: str = typer.Argument(
@@ -460,8 +469,31 @@ def encrypt(
         "-y",
         help="Skip confirmation prompt",
     ),
+    channel_types: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--channel-type",
+            "-c",
+            help="Channel types to include (private, dm, public, gdm). Can be repeated.",
+        ),
+    ] = None,
 ) -> None:
     """Encrypt your slack messages transparently"""
+
+    types_filter: list[str] = []
+    if channel_types:
+        for ct in channel_types:
+            if ct not in CHANNEL_TYPE_ALIASES:
+                typer.echo(
+                    typer.style(
+                        f"Invalid channel type '{ct}'. Valid types: {', '.join(CHANNEL_TYPE_ALIASES.keys())}",
+                        fg=colors.RED,
+                    )
+                )
+                raise typer.Exit(1)
+            types_filter.append(CHANNEL_TYPE_ALIASES[ct])
+    else:
+        types_filter = ["channel"]
 
     tokens: list[str] = []
 
@@ -509,9 +541,13 @@ def encrypt(
         cursor = conn.cursor()
 
         cutoff_ts = time.time() - (older_than * 86400)
+        placeholders = ",".join("?" * len(types_filter))
         cursor.execute(
-            "SELECT ts, channel_id, text FROM messages WHERE ts < ? ORDER BY ts DESC",
-            (cutoff_ts,),
+            f"""SELECT ts, channel_id, text FROM messages
+                WHERE ts < ?
+                AND (channel_type IN ({placeholders}) OR (type = 'im' AND 'im' IN ({placeholders})))
+                ORDER BY ts DESC""",
+            (cutoff_ts, *types_filter, *types_filter),
         )
         rows: list[tuple[str, str, str]] = cursor.fetchall()
 
@@ -521,7 +557,8 @@ def encrypt(
             return
 
         typer.echo(
-            f"Encrypting {typer.style(str(total), fg=colors.CYAN, bold=True)} messages..."
+            f"Encrypting {typer.style(str(total), fg=colors.CYAN, bold=True)} messages "
+            f"(channel types: {', '.join(types_filter)})..."
         )
 
         key, salt = derive_key(password)
@@ -615,8 +652,31 @@ def decrypt(
         "-y",
         help="Skip confirmation prompt",
     ),
+    channel_types: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--channel-type",
+            "-c",
+            help="Channel types to include (private, dm, public, gdm). Can be repeated.",
+        ),
+    ] = None,
 ) -> None:
     """Decrypt previously encrypted slack messages"""
+
+    types_filter: list[str] = []
+    if channel_types:
+        for ct in channel_types:
+            if ct not in CHANNEL_TYPE_ALIASES:
+                typer.echo(
+                    typer.style(
+                        f"Invalid channel type '{ct}'. Valid types: {', '.join(CHANNEL_TYPE_ALIASES.keys())}",
+                        fg=colors.RED,
+                    )
+                )
+                raise typer.Exit(1)
+            types_filter.append(CHANNEL_TYPE_ALIASES[ct])
+    else:
+        types_filter = ["channel"]
 
     tokens: list[str] = []
 
@@ -657,9 +717,13 @@ def decrypt(
         cursor = conn.cursor()
 
         cutoff_ts = time.time() - (younger_than * 86400)
+        placeholders = ",".join("?" * len(types_filter))
         cursor.execute(
-            "SELECT ts, channel_id, text FROM messages WHERE ts > ? ORDER BY ts DESC",
-            (cutoff_ts,),
+            f"""SELECT ts, channel_id, text FROM messages
+                WHERE ts > ?
+                AND (channel_type IN ({placeholders}) OR (type = 'im' AND 'im' IN ({placeholders})))
+                ORDER BY ts DESC""",
+            (cutoff_ts, *types_filter, *types_filter),
         )
         rows: list[tuple[str, str, str]] = cursor.fetchall()
 
@@ -669,7 +733,8 @@ def decrypt(
             return
 
         typer.echo(
-            f"Checking {typer.style(str(total), fg=colors.CYAN, bold=True)} messages..."
+            f"Checking {typer.style(str(total), fg=colors.CYAN, bold=True)} messages "
+            f"(channel types: {', '.join(types_filter)})..."
         )
 
         decrypted_count = 0

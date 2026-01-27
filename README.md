@@ -81,6 +81,21 @@ Use `--mode` to control what replaces your message text:
 - `random`: Replace with random hex string
 - `invisible`: Make the message invisible
 
+#### Channel type filtering
+
+Use `--channel-type` / `-c` to filter which types of channels to encrypt. Can be repeated for multiple types.
+
+- `public` (default): Public channels
+- `private`: Private channels
+- `dm`: Direct messages
+- `gdm`: Group direct messages
+
+For example, to encrypt messages in DMs and private channels older than 30 days, run:
+
+```bash
+hades encrypt YOUR_PASSWORD_HERE 30 --apps apps.json -c dm -c private --execute
+```
+
 ### Decrypting your messages
 
 To decrypt your messages you will need to have a fresh download of your messages (run the `download` command again) and then run:
