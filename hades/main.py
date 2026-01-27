@@ -21,7 +21,7 @@ from hades.crypto import decrypt_text, derive_key, encrypt_text
 from hades.db import init_db
 from hades.oauth import do_oauth_flow
 from hades.slack import TokenPool, api_call_with_retry, search_user_messages
-from hades.unicode import WORD_JOINER
+from hades.unicode import WORD_JOINER, PREFIX
 
 app = typer.Typer(
     name="hades",
@@ -571,6 +571,10 @@ def encrypt(
                 if original_text.strip() == "":
                     pbar.update(1)
                     continue  # skip empty messages
+
+                if original_text.startswith(PREFIX):
+                    pbar.update(1)
+                    continue  # already encrypted
 
                 encrypted = encrypt_text(original_text, key, salt)
 
