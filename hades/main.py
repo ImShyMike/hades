@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime
@@ -414,6 +415,7 @@ class EncryptMode(Enum):
     RANDOM = "random"
     TEXT = "text"
     INVISIBLE = "invisible"
+    REPLACE = "replace"
 
 
 CHANNEL_TYPE_ALIASES = {
@@ -579,6 +581,8 @@ def encrypt(
                     filler = text or "[anonymized with hades]"
                 elif mode == EncryptMode.INVISIBLE:
                     filler = ""
+                elif mode == EncryptMode.REPLACE:
+                    filler = re.sub(r"\S", "*", original_text)
 
                 new_text = str(encrypted or "") + chr(WORD_JOINER) + str(filler or "")
 
