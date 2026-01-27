@@ -720,7 +720,10 @@ def decrypt(
     with sqlite3.connect(path) as conn:
         cursor = conn.cursor()
 
-        cutoff_ts = time.time() - (younger_than * 86400)
+        if younger_than == 0:
+            cutoff_ts = 0
+        else:
+            cutoff_ts = time.time() - (younger_than * 86400)
         placeholders = ",".join("?" * len(types_filter))
         cursor.execute(
             f"""SELECT ts, channel_id, text FROM messages
