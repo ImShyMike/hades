@@ -415,7 +415,7 @@ class EncryptMode(Enum):
     RANDOM = "random"
     TEXT = "text"
     INVISIBLE = "invisible"
-    REPLACE = "replace"
+    REDACT = "redact"
 
 
 CHANNEL_TYPE_ALIASES = {
@@ -581,7 +581,7 @@ def encrypt(
                     filler = text or "[anonymized with hades]"
                 elif mode == EncryptMode.INVISIBLE:
                     filler = ""
-                elif mode == EncryptMode.REPLACE:
+                elif mode == EncryptMode.REDACT:
                     filler = re.sub(r"\S", "*", original_text)
 
                 new_text = str(encrypted or "") + chr(WORD_JOINER) + str(filler or "")

@@ -80,7 +80,7 @@ Use `--mode` to control what replaces your message text:
 - `text` (default): Replace with custom text via `--text` (default: `[anonymized with hades]`)
 - `random`: Replace with random hex string
 - `invisible`: Make the message invisible
-- `replace`: Replaces non space characters with asterisks (`*`)
+- `redact`: Replaces non space characters with asterisks (`*`)
 
 #### Channel type filtering
 
