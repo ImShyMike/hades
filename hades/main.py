@@ -588,7 +588,7 @@ def encrypt(
                 elif mode == EncryptMode.REDACT:
                     filler = re.sub(r"\S", "*", original_text)
 
-                new_text = str(encrypted or "") + chr(WORD_JOINER) + str(filler or "")
+                new_text = str(encrypted or "") + str(filler or "")
 
                 if not execute:
                     pbar.write(

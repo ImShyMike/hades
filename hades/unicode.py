@@ -20,6 +20,8 @@ def decode_tags(text: str) -> str:
     if not text.startswith(PREFIX):
         raise ValueError("Text is not encoded with tags")
 
+    text = text[len(PREFIX):]
+
     out: list[str] = []
 
     for ch in text:
@@ -27,21 +29,8 @@ def decode_tags(text: str) -> str:
 
         if TAG_SPACE <= cp <= TAG_SPACE + 0x5E:  # 0x20-0x7E
             out.append(chr(cp - TAG_SPACE + 0x20))
-
-        elif (
-            cp
-            in [
-                TAG_END,
-                TAG_BEGIN,
-                INVISIBLE_SEPARATOR,
-                INVISIBLE_TIMES,
-                INVISIBLE_PLUS,
-                WORD_JOINER,
-            ]
-            or 0xE0000 <= cp <= 0xE001F
-        ):
-            continue
-
+        elif cp == WORD_JOINER:
+            break
         else:
             out.append(ch)
 
@@ -61,5 +50,7 @@ def encode_tags(text: str) -> str:
             out.append(chr(TAG_SPACE + cp - 0x20))
         else:
             out.append(ch)
+
+    out.append(chr(WORD_JOINER))
 
     return "".join(out)
