@@ -63,6 +63,7 @@ def encrypt_text(text: str, key: bytes, salt: bytes) -> str:
     encoded = encode_tags(encrypted)
     return encoded
 
+
 def decrypt_text(token: str, password: str) -> str:
     """Decrypt text with tag decoding"""
     decoded = decode_tags(token)

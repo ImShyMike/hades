@@ -20,7 +20,7 @@ def decode_tags(text: str) -> str:
     if not text.startswith(PREFIX):
         raise ValueError("Text is not encoded with tags")
 
-    text = text[len(PREFIX):]
+    text = text[len(PREFIX) :]
 
     out: list[str] = []
 
