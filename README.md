@@ -2,6 +2,12 @@
 
 transparent slack message anonymizer
 
+| Before                        |                        After |
+|:-----------------------------:|:----------------------------:|
+|![before](./assets/before.png) | ![after](./assets/after.png) |
+
+---
+
 ## Installation
 
 Requires Python 3.12+
