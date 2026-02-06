@@ -316,6 +316,134 @@ def install_apps(
 
 
 @app.command()
+def delete_apps(
+    config_token: str = typer.Argument(
+        help="Slack App Configuration Token (xoxe.xoxp-...)",
+    ),
+    apps_file: Path = typer.Option(
+        Path("apps.json"),
+        "--apps",
+        "-a",
+        help="Path to apps.json with app credentials",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompt",
+    ),
+    keep_file: bool = typer.Option(
+        False,
+        "--keep-file",
+        help="Keep the apps.json file after deletion (don't delete it)",
+    ),
+) -> None:
+    """
+    Delete all Hades apps from your Slack workspace.
+
+    This permanently removes all apps created by the create-apps command.
+    Requires the same App Configuration Token used to create the apps.
+    """
+    if not apps_file.exists():
+        typer.echo(typer.style(f"Apps file not found: {apps_file}", fg=colors.RED))
+        raise typer.Exit(1)
+
+    with open(apps_file, encoding="utf8") as f:
+        apps_list: list[dict[str, Any]] = json.load(f)
+
+    if not apps_list:
+        typer.echo(typer.style("No apps found in file.", fg=colors.YELLOW))
+        raise typer.Exit(0)
+
+    if not yes:
+        typer.echo(
+            typer.style(
+                f"WARNING: This will DELETE {len(apps_list)} Slack apps permanently!",
+                fg=colors.RED,
+                bold=True,
+            )
+        )
+        typer.echo(
+            typer.style(
+                "This action cannot be undone. The apps will be removed from your workspace.",
+                fg=colors.RED,
+            )
+        )
+        confirm = typer.prompt(
+            typer.style("Type 'delete' to proceed", fg=colors.YELLOW)
+        )
+        if confirm.lower() != "delete":
+            typer.echo(typer.style("Aborted.", fg=colors.RED))
+            raise typer.Exit(1)
+
+    deleted = 0
+    failed = 0
+    for i, app_info in enumerate(apps_list, 1):
+        app_id = app_info.get("app_id")
+        app_name = app_info.get("name", "Unknown")
+
+        if not app_id:
+            typer.echo(
+                f"[{typer.style(f'{i}/{len(apps_list)}', fg=colors.CYAN)}] "
+                f"{app_name}: {typer.style('no app_id, skipping', fg=colors.YELLOW)}"
+            )
+            failed += 1
+            continue
+
+        typer.echo(
+            f"[{typer.style(f'{i}/{len(apps_list)}', fg=colors.CYAN)}] "
+            f"Deleting {app_name}..."
+        )
+
+        response = httpx.post(
+            "https://slack.com/api/apps.manifest.delete",
+            headers={"Authorization": f"Bearer {config_token}"},
+            json={"app_id": app_id},
+            timeout=30,
+        )
+        data = response.json()
+
+        if not data.get("ok"):
+            error = data.get("error", "unknown")
+            if error == "ratelimited":
+                retry_after = int(response.headers.get("Retry-After", 60))
+                typer.echo(
+                    typer.style(
+                        f"  Rate limited. Waiting {retry_after}s before retry...",
+                        fg=colors.YELLOW,
+                    )
+                )
+                time.sleep(retry_after)
+                # Retry once
+                response = httpx.post(
+                    "https://slack.com/api/apps.manifest.delete",
+                    headers={"Authorization": f"Bearer {config_token}"},
+                    json={"app_id": app_id},
+                    timeout=30,
+                )
+                data = response.json()
+
+            if not data.get("ok"):
+                error = data.get("error", "unknown")
+                typer.echo(typer.style(f"  Failed: {error}", fg=colors.RED))
+                failed += 1
+                continue
+
+        typer.echo(f"  Deleted: {typer.style(app_id, fg=colors.GREEN)}")
+        deleted += 1
+        time.sleep(1)
+
+    if not keep_file:
+        apps_file.unlink()
+        typer.echo(f"\nDeleted {apps_file}")
+
+    typer.echo(
+        f"\n{typer.style(str(deleted), fg=colors.GREEN, bold=True)} apps deleted, "
+        f"{typer.style(str(failed), fg=colors.RED if failed else colors.GREEN)} failed"
+    )
+
+
+@app.command()
 def stats(
     path: Path = typer.Option(
         DEFAULT_DB_PATH,
