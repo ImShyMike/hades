@@ -13,14 +13,11 @@ oauth_config:
     - http://localhost:3000/callback
   scopes:
     user:
-      - channels:read
-      - channels:history
       - search:read
       - chat:write
       - links:write
     bot:
-      - channels:read
-      - channels:history
+      - app_mentions:read
 
 settings:
   org_deploy_enabled: false

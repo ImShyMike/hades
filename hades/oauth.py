@@ -73,7 +73,7 @@ def do_oauth_flow(port: int, apps_list: list[dict[str, Any]]):
         auth_url = (
             f"https://slack.com/oauth/v2/authorize"
             f"?client_id={client_id}"
-            f"&user_scope=search:read,channels:read,channels:history"
+            f"&user_scope=search:read,links:write,chat:write"
             f"&redirect_uri={urllib.parse.quote(redirect_uri)}"
         )
 
