@@ -1,6 +1,6 @@
 [project]
 name = "hades-slack"
-version = "0.1.8"
+version = "0.2.0"
 description = "transparent slack message anonymizer"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -32,6 +32,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 include = ["hades*"]
+
+[tool.setuptools.package-data]
+hades = ["manifest.yaml"]
 
 [tool.uv]
 package = true

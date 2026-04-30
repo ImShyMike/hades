@@ -7,6 +7,7 @@ import sqlite3
 import time
 from datetime import datetime
 from enum import Enum
+from importlib.resources import files
 from pathlib import Path
 from typing import Annotated, Any, Optional
 
@@ -21,7 +22,7 @@ from hades.crypto import decrypt_text, derive_key, encrypt_text
 from hades.db import init_db
 from hades.oauth import do_oauth_flow
 from hades.slack import TokenPool, api_call_with_retry, search_user_messages
-from hades.unicode import WORD_JOINER, PREFIX
+from hades.unicode import PREFIX, WORD_JOINER
 
 app = typer.Typer(
     name="hades",
@@ -31,6 +32,15 @@ app = typer.Typer(
 )
 
 DEFAULT_DB_PATH = "slack_messages.db"
+
+
+def get_default_manifest_path() -> Path:
+    """Get the default manifest path from the package data."""
+    try:
+        manifest_file = files("hades").joinpath("manifest.yaml")
+        return Path(str(manifest_file))
+    except (TypeError, FileNotFoundError):
+        return Path("manifest.yaml")
 
 
 def load_tokens_from_apps_file(apps_file: Path) -> list[str]:
@@ -178,7 +188,7 @@ def create_apps(
     ),
     count: int = typer.Option(5, help="Number of apps to create"),
     manifest_path: Path = typer.Option(
-        Path("manifest.yaml"),
+        None,
         "--manifest",
         help="Path to manifest YAML file",
     ),
@@ -195,6 +205,9 @@ def create_apps(
     Requires an App Configuration Token from https://api.slack.com/apps
     (under "Your App Configuration Tokens", click "Generate" and copy the "Access Token").
     """
+    if manifest_path is None:
+        manifest_path = get_default_manifest_path()
+
     if not manifest_path.exists():
         typer.echo(
             typer.style(f"Manifest file not found: {manifest_path}", fg=colors.RED)
