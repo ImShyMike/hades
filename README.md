@@ -19,6 +19,8 @@ Requires Python 3.12+
 uv tool install hades-slack
 ```
 
+Check it out on PyPI: [https://pypi.org/project/hades-slack](https://pypi.org/project/hades-slack)
+
 ## Usage
 
 ### Create Slack apps
