@@ -30,5 +30,8 @@ dev = [
     "types-tqdm>=4.67.0.20250809",
 ]
 
+[tool.setuptools.packages.find]
+include = ["hades*"]
+
 [tool.uv]
 package = true
