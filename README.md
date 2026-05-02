@@ -9,7 +9,7 @@ transparent slack message anonymizer
 ---
 
 > [!CAUTION]
-> This will project can apply PERMANENET CHANGES to your slack messages. Make sure to read the documentation before using it and consider testing it on a test workspace first.
+> This will project can apply PERMANENT CHANGES to your slack messages. Make sure to read the documentation before using it and consider testing it on a test workspace first.
 
 ## Installation
 
